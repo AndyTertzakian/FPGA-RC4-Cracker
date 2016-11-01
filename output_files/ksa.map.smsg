@@ -1,0 +1,2 @@
+Warning (10268): Verilog HDL information at ksa.v(33): always construct contains both blocking and non-blocking assignments File: C:/Users/Andy Tertakian/Dropbox/CPEN 311/lab4/dist_files/task1/ksa.v Line: 33
+Info (10281): Verilog HDL Declaration information at ksa.v(4): object "KEY" differs only in case from object "Key" in the same scope File: C:/Users/Andy Tertakian/Dropbox/CPEN 311/lab4/dist_files/task1/ksa.v Line: 4
