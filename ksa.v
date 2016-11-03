@@ -16,37 +16,79 @@ typedef enum {state_init,
 					state_wait_S_at_j,
 					state_update_S_at_i,
 					state_update_S_at_j,
+					state_init_loop,
+					state_get_S_at_i_2,
+					state_wait_S_at_i_2,
+					state_get_j_and_S_at_j_2,
+					state_wait_S_at_j_2,
+					state_update_S_at_i_2,
+					state_update_S_at_j_2,
+					state_get_f,
+					state_wait_f,
+					state_get_input_at_k,
+					state_wait_input_at_k,
+					state_update_output_at_k,
+					state_update_k,
 					state_done} state_type;
 state_type state;
 
 // these are signals that connect to the memory
+
+//parameters for the circuit
+parameter Key_Length = 3;
+parameter Message_Length = 32; 
 
 //For s_memory
 reg [7:0] address, data; 
 reg [7:0] q;
 reg wren;
 
-//datapath regs
+//For message_rom
+reg [4:0] address_m;
+reg [7:0] q_m;
+
+//For output_ram
+reg [4:0] address_d;
+reg [7:0] data_d, q_d;
+reg wren_d;
+
+//datapath regs and variables
 reg [8:0] i, j;
+reg [7:0] f, input_message;
+reg [5:0] k;
 reg [7:0] S_at_i, S_at_j; 
 reg [7:0] temp_swap; //for swapping 
 
+
+
 //The values for the secret key
-parameter Key_Length = 3;
-// wire [7:0] Key [2:0];
-// assign Key[2] = SW[7:0];
-// assign Key[1] = {6'b0000000, SW[9:8]};
-// assign Key[0] = 8'b00000000;
+
 wire [23:0] Key;
-assign Key[23:10] = 1'b0;
 assign Key[9:0] = SW;
+assign Key[23:10] = 1'b0;
 
 //To indicate when the process has completed
 assign LEDR[7] = (state == state_done);
 
 // include S memory structurally
-s_memory u0(address, CLOCK_50, data, wren, q);
+s_memory S( .address(address), 
+				.clock(CLOCK_50), 
+				.data(data), 
+				.wren(wren),
+				.q(q));
 
+//include the message rom
+message_rom Message( .address(address_m),
+							.clock(CLOCK_50),
+							.q(q_m));
+							
+//include the decrypted output result ram
+output_ram Result(.address(address_d),
+						.clock(CLOCK_50),
+						.data(data_d),
+						.wren(wren_d),
+						.q(q_d));
+				
 //Implicite datapath
 always_ff @(posedge CLOCK_50) begin
 	case(state)
@@ -162,15 +204,160 @@ always_ff @(posedge CLOCK_50) begin
 			i = i + 1'b1;
 			
 			//Next state logic
-			state <= (i < 256) ? state_get_S_at_i : state_done;
+			state <= (i < 256) ? state_get_S_at_i : state_init_loop;
 		
 		end //End state_update_S_at_j
 		
+		state_init_loop : begin 
+		
+			//Data Update
+			//reset all looping iteration variables to 0
+			i = 9'b000000000;
+			j = 9'b000000000;
+			k = 6'b000000;
+			
+			//Next state logic
+			state <= state_get_S_at_i_2;
+		end //End state_init_loop	
+		
+		state_get_S_at_i_2 : begin
+		
+			//Data Update
+			i = (i + 1'b1) % 9'b100000000;
+			
+			//Memory Control
+			wren    <= 1'b0;
+			address <= i[7:0];
+			
+			//Next state logic
+			state <= state_wait_S_at_i_2;
+		
+		end //End _state_get_S_at_i_2
+		
+		state_wait_S_at_i_2 : begin
+		
+			//Next state logic
+			state <= state_get_j_and_S_at_j_2;
+			
+		end //End state_wait_S_at_2
+		
+		state_get_j_and_S_at_j_2 : begin
+		
+			//Data update
+			S_at_i 		= q;
+			j      		= (S_at_i + j) % 9'b100000000;
+			temp_swap   = S_at_i; //to be used for swapping
+			
+			//Memory Control
+			address <= j[7:0];
+		   
+			//Next state logic
+			state <= state_wait_S_at_j_2;
+			
+		end //End state state_get_j_and_S_at_j_2
+		
+		state_wait_S_at_j_2 : begin
+		
+			//Next state logic 
+			state <= state_update_S_at_i_2;
+		
+		end //End state_wait_S_at_i_2
+		
+		state_update_S_at_i_2 : begin
+		
+			//Date update
+			S_at_j = q; 
+			
+			//Memory Control
+			wren    <= 1'b1; //enable writing for swapping
+			address <= i[7:0];
+			data    <= S_at_j[7:0]; //begin swapping
+			
+			//Next state logic
+			state <= state_update_S_at_j_2;
+		
+		end //End state_update_S_at_i_2
+		
+		state_update_S_at_j_2 : begin
+			
+			//Memory Control
+			wren    <= 1'b1; //ensure that writing is still enabled for swapping
+			address <= j[7:0];
+			data    <= temp_swap[7:0]; //complete the swapping
+			
+			//Next state logic
+			state <= state_get_f;
+			
+		end //End state_update_S_at_j_2
+		
+		state_get_f : begin
+			
+			//Memory Control
+			wren    <= 1'b0; //no writing needed to S anymore
+			address <= (S_at_j + temp_swap) % 9'b100000000;
+			
+			//Next state logic
+			state <= state_wait_f;
+			
+		end
+		
+		state_wait_f : begin
+			
+			//Next state logic
+			state <= state_get_input_at_k;
+			
+		end //End state_wait_f
+		
+		state_get_input_at_k : begin
+		
+			//Update data
+			f = q; //get the value of S_at(S_at_i + S_at_j % 256)
+			
+			//Memory Control
+			address_m <= k[4:0]; //get the input at k
+			
+			//Next state logic
+			state <= state_wait_input_at_k;
+		
+		end //End state_get_input_at_k
+		
+		state_wait_input_at_k : begin
+		 
+			//Next state logic
+			state <= state_update_output_at_k;
+		 
+		end //End state_wait_input_at_k
+		
+		state_update_output_at_k : begin
+			
+			//Data update
+			input_message = q_m;
+		
+			//Memory Control
+			wren_d    <= 1'b1;
+			address_d <= k[4:0];
+			data_d    <= input_message ^ f;
+			
+			//Next state logic
+			state <= state_update_k;
+			
+		end //End state_update_output_at_k
+		
+		state_update_k : begin
+			
+			//Data update
+			k = k + 1'b1;
+		
+			//Memory Control
+			wren_d <= 1'b0;
+			
+			//Next state logic
+			state <= (k < Message_Length) ? state_get_S_at_i_2 : state_done;
+		
+		end //End state_update_k
+		
 		state_done : begin 
 			
-			//Memory control
-			wren <= 1'b0; //No more writing to memory is required after finishing
-				
 			//Next state logic	
 			state <= state_done; //stay here forever after completion
 		
