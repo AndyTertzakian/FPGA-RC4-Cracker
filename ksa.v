@@ -29,6 +29,7 @@ typedef enum {state_init,
 					state_wait_input_at_k,
 					state_update_output_at_k,
 					state_update_k,
+					state_update_Key,
 					state_done} state_type;
 state_type state;
 
@@ -62,13 +63,13 @@ reg [7:0] temp_swap; //for swapping
 
 
 //The values for the secret key
-
-wire [23:0] Key;
-assign Key[9:0] = SW;
-assign Key[23:10] = 1'b0;
+reg [23:0] Key;
+//these were for task 2
+//assign Key[9:0] = SW;
+//assign Key[23:10] = 1'b0;
 
 //To indicate when the process has completed
-assign LEDR[7] = (state == state_done);
+assign LEDR = Key[21:12];
 
 // include S memory structurally
 s_memory S( .address(address), 
@@ -90,13 +91,13 @@ output_ram Result(.address(address_d),
 						.q(q_d));
 				
 //Implicite datapath
-always_ff @(posedge CLOCK_50) begin
+always_ff @(posedge CLOCK_50) begin	
 	case(state)
 	
 		state_init : begin 
 			
 			//Data initialization
-			i = 9'b000000000;	
+			i   = 9'b000000000;	
 			
 			//Memory control
 			wren  <= 1'b1;
@@ -338,23 +339,43 @@ always_ff @(posedge CLOCK_50) begin
 			address_d <= k[4:0];
 			data_d    <= input_message ^ f;
 			
-			//Next state logic
-			state <= state_update_k;
+			//Next state logic	
+			state <= (((8'b01100001 > (f ^ input_message)) || ((f ^ input_message) > 8'b01111010)) && ((f^input_message) != 32)) ? 
+							state_update_Key : state_update_k;
 			
 		end //End state_update_output_at_k
 		
-		state_update_k : begin
+		state_update_k: begin
 			
-			//Data update
+			//Update data
 			k = k + 1'b1;
-		
+			
+			if(k >= Message_Length)
+				Key = 24'b001000000000000000000000;
+
 			//Memory Control
 			wren_d <= 1'b0;
 			
 			//Next state logic
 			state <= (k < Message_Length) ? state_get_S_at_i_2 : state_done;
-		
+
 		end //End state_update_k
+		
+		state_update_Key: begin
+			
+			//Data Update
+			Key = Key + 1'b1;
+			
+			if(Key >= 24'b010000000000000000000000)
+				Key = 24'b000100000000000000000000;
+			
+			//Memory Control
+			wren_d <= 1'b0;
+			
+			//Next state logic
+			state <= (Key < 24'b010000000000000000000000) ? state_init : state_done;
+
+		end //End state_update_Key
 		
 		state_done : begin 
 			
@@ -364,8 +385,12 @@ always_ff @(posedge CLOCK_50) begin
 		end //End State_done
 		
 		default : begin 
-		
-			i = 9'b000000000;
+			
+			//Data update
+			i 			  = 9'b000000000;
+			Key = 24'b000000000000000000000000;
+			
+			//Next state logic
 			state <= state_init;
 			
 		end //End Default
